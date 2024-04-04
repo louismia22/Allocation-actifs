@@ -145,3 +145,36 @@ def rebalance_and_evaluate(df_plus, df_minus, start_date, costs):
     
   
     return  adf_critic_value,adf_stats_list,replication_max,replication_min
+
+
+#calcul des métriques importantes.
+def calculate_annual_global_metrics(replication_max, replication_min):
+    """
+    Calculer la variance annuelle du rendement global, le rendement global annuel,
+    ainsi que la skewness et la kurtosis pour chaque année.
+
+    :param daily_returns_diff: Une série pandas de rendements quotidiens avec des dates en index.
+    :return: Un DataFrame avec la variance annuelle du rendement global, le rendement global annuel,
+             la skewness et la kurtosis pour chaque année.
+    """
+    daily_returns_max = replication_max.pct_change().dropna()
+    daily_returns_min = replication_min.pct_change().dropna()
+
+    # Calculer la différence des rendements quotidiens : ce qui nous intéresse 
+    daily_returns_diff = daily_returns_max - daily_returns_min
+    # Grouper les données par année
+    grouped = daily_returns_diff.groupby(daily_returns_diff.index.year)
+    
+    # Initialiser un DataFrame pour stocker les résultats
+    annual_metrics = pd.DataFrame()
+    
+    # Calculer le rendement global annuel et la variance de ce rendement pour chaque groupe (année)
+    annual_metrics['Annual Global Return'] = grouped.apply(lambda x: (1 + x).prod() - 1)
+    annual_metrics['Daily mean Return'] = grouped.mean()
+    annual_metrics['Daily Variance of Global Return'] = grouped.var() #on regarde la variance du rendement journalier 
+
+    # Calculer la skewness et la kurtosis pour chaque année
+    #annual_metrics['Annual Skewness'] = grouped.skew()
+   # annual_metrics['Annual Kurtosis'] = grouped.kurtosis()
+    
+    return annual_metrics
