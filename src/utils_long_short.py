@@ -1,5 +1,8 @@
 import pandas as pd
 import numpy as np
+import statsmodels.api as sm
+from statsmodels.tsa.stattools import adfuller
+import scipy.stats as stats
 
 def calculer_rendement_iteratif(df_data, date_debut, rendement_annuel):
     """
@@ -33,3 +36,112 @@ def calculer_rendement_iteratif(df_data, date_debut, rendement_annuel):
     
     return df_subset
 
+
+
+
+def perform_regression(df_data):
+    """
+    This function takes a dataframe with price columns and the CAC Index Adjusted column,
+    performs a regression to predict the log of the CAC Index Adjusted using the logs of the prices,
+    and returns the calculated weights, the initial intercept, and the residuals over time.
+    """
+    # Take all columns from the second to the penultimate
+    independent_vars = df_data.iloc[:, 1:-1]
+    # Take the last column as the dependent variable
+    dependent_var = df_data.iloc[:, -1]
+
+    # Apply logarithm to the selected data, ensuring no zero or negative values
+    independent_vars = independent_vars.replace([np.inf, -np.inf, 0], np.nan).dropna()
+    dependent_var = dependent_var.replace([np.inf, -np.inf, 0], np.nan).dropna()
+
+    # Apply logarithm to the selected data
+    log_independent_vars = np.log(independent_vars)
+    log_dependent_var = np.log(dependent_var)
+
+    # Add a constant term for the intercept
+    log_independent_vars_with_constant = sm.add_constant(log_independent_vars)
+
+    # Perform the regression
+    model = sm.OLS(log_dependent_var, log_independent_vars_with_constant).fit()
+
+    # Calculate the residuals
+    residuals = model.resid
+
+    # Check if 'const' is in the model parameters
+    if 'const' in model.params:
+        intercept = model.params['const']
+        # Return the intercept, model parameters (excluding the intercept), and residuals
+        return intercept, model.params.drop('const'), residuals
+    else:
+        # If 'const' is not present, return a message and the rest of the parameters
+        return "No intercept found", model.params, residuals
+    
+
+
+
+def rebalance_and_evaluate(df_plus, df_minus, start_date, costs):
+    # Convertir start_date en objet datetime si nécessaire
+    current_date = pd.to_datetime(start_date)+ pd.DateOffset(days=10)
+
+    end_date = df_plus.iloc[-1].name # Supposons que l'index du df est une série de dates
+    adf_critic_value = []
+
+
+    # Initialiser la liste pour stocker les résultat
+    prices_list = []
+    adf_stats_list = []
+    portfolio = pd.DataFrame()
+    replication_max = pd.DataFrame()
+    replication_min = pd.DataFrame()
+    params_plus_old =perform_regression(df_plus)[2]
+    params_minus_old =  perform_regression(df_minus)[2]
+    
+    while current_date < end_date:
+        # Sélectionner la tranche de données jusqu'à la date courante
+        data_slice_plus = df_plus.loc[start_date:current_date]
+        data_slice_minus = df_minus.loc[start_date:current_date]
+        
+
+        intercept_plus, params_plus, residuals_plus = perform_regression(data_slice_plus)
+        intercept_minus, params_minus, residuals_minus = perform_regression(data_slice_minus)
+        #print(np.sum(abs((params_plus-params_minus) - (params_plus_old-params_minus_old))*data_slice_plus.iloc[-1,1:-1]))
+        #print("ok")
+
+        costs = 0.002*np.sum(abs((params_plus-params_minus) - (params_plus_old-params_minus_old))*data_slice_plus.iloc[-1,1:-1])
+
+ 
+
+        params_plus_old = params_plus
+        params_minus_old = params_minus
+        
+        
+
+        
+        # Effectuer le test ADF sur les résidus
+        adf_result = adfuller(residuals_plus)
+        adf_stats_list.append(adf_result[0])
+        
+        # Vérifier les valeurs critiques pour la cointégration
+        #if adf_result[0] > adf_result[4]['1%']:  # Si la stat est plus grande que la valeur critique à 1%
+            # Ne pas procéder au rebalancement si la cointégration n'est pas présente
+           
+           # break
+        data_plus = df_plus.loc[current_date-pd.DateOffset(days=10):current_date]
+        data_moins = df_minus.loc[current_date-pd.DateOffset(days=10):current_date]
+       
+        # Calculer le prix du portfolio après soustraction des coûts
+        portfolio_price_plus = np.exp(np.sum(params_plus * np.log(data_plus.iloc[:, 1:-1]),axis=1)) - costs/2 #le prix de notre portefeuille, il manque les dates uniquement
+        portfolio_price_minus= np.exp(np.sum(params_minus * np.log(data_moins.iloc[:, 1:-1]),axis=1)) - costs/2 #le prix de notre portefeuille, il manque les dates uniquement
+
+
+        prices_list.append(portfolio_price_plus-portfolio_price_minus)
+        portfolio = pd.concat([portfolio, portfolio_price_plus-portfolio_price_minus])
+        replication_max = pd.concat([replication_max, portfolio_price_plus])
+        replication_min = pd.concat([replication_min,portfolio_price_minus ])
+
+     
+        current_date += pd.DateOffset(days=10) #on modifie la date.. 
+        adf_critic_value.append(adf_result[4]['1%'])
+    
+  
+    return  adf_critic_value,adf_stats_list,replication_max,replication_min
