@@ -130,8 +130,8 @@ def rebalance_and_evaluate(df_plus, df_minus, start_date, costs):
         data_moins = df_minus.loc[current_date-pd.DateOffset(days=10):current_date]
        
         # Calculer le prix du portfolio après soustraction des coûts
-        portfolio_price_plus = np.exp(np.sum(params_plus * np.log(data_plus.iloc[:, 1:-1]),axis=1)) - costs/2 #le prix de notre portefeuille, il manque les dates uniquement
-        portfolio_price_minus= np.exp(np.sum(params_minus * np.log(data_moins.iloc[:, 1:-1]),axis=1)) - costs/2 #le prix de notre portefeuille, il manque les dates uniquement
+        portfolio_price_plus = np.exp(np.sum(params_plus * np.log(data_plus.iloc[:, 1:-1]),axis=1)) #le prix de notre portefeuille, il manque les dates uniquement
+        portfolio_price_minus= np.exp(np.sum(params_minus * np.log(data_moins.iloc[:, 1:-1]),axis=1)) + costs #le prix de notre portefeuille, il manque les dates uniquement
 
 
         prices_list.append(portfolio_price_plus-portfolio_price_minus)
